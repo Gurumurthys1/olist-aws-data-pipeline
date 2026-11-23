@@ -1,0 +1,9 @@
+COPY olist.dim_geography    FROM 's3://olistcap-data-2026/trusted/dim_geography/'    IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.dim_customer     FROM 's3://olistcap-data-2026/trusted/dim_customer/'     IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.dim_seller       FROM 's3://olistcap-data-2026/trusted/dim_seller/'       IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.dim_product      FROM 's3://olistcap-data-2026/trusted/dim_product/'      IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.dim_payment_type FROM 's3://olistcap-data-2026/trusted/dim_payment_type/' IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.dim_date         FROM 's3://olistcap-data-2026/trusted/dim_date/'         IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.fact_sales       FROM 's3://olistcap-data-2026/trusted/fact_sales/'       IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.fact_orders      FROM 's3://olistcap-data-2026/trusted/fact_orders/'      IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;
+COPY olist.fact_payments    FROM 's3://olistcap-data-2026/trusted/fact_payments/'    IAM_ROLE 'arn:aws:iam::517374107791:role/OlistRedshiftRole' FORMAT AS PARQUET;

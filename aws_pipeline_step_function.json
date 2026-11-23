@@ -1,0 +1,120 @@
+{
+  "Comment": "Olist pipeline: API ingest -> Glue 1 -> Glue 2 -> Redshift load -> mark uploads loaded + SPICE refresh",
+  "StartAt": "IngestApi",
+  "States": {
+    "IngestApi": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "olist_api_ingest",
+        "Payload": {}
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "RawToCurated"
+    },
+    "RawToCurated": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "olist-raw-to-curated"
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "CuratedToTrusted"
+    },
+    "CuratedToTrusted": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "olist_curated_to_trusted",
+        "Arguments": {
+          "--BUCKET": "olistcap-data-2026"
+        }
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "LoadRedshift"
+    },
+    "LoadRedshift": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "olist_load_redshift",
+        "Payload": {}
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "AfterLoad"
+    },
+    "AfterLoad": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "olist_after_load",
+        "Payload": {
+          "started.$": "$$.Execution.StartTime"
+        }
+      },
+      "ResultPath": null,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Next": "Done"
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:517374107791:olist-alerts",
+        "Subject": "Olist pipeline failed",
+        "Message.$": "States.JsonToString($.error)"
+      },
+      "Next": "Failed"
+    },
+    "Failed": {
+      "Type": "Fail"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}

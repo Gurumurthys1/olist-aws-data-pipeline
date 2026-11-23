@@ -1,0 +1,29 @@
+# secrets and private notes (account details, ARNs, email) - never commit
+.env
+.env*
+*accessKeys*.csv
+information.txt
+quick_sight_and_redshift_connection.txt
+
+# course material and internal documents (not ours to publish)
+complete_docs/
+docs/*.pdf
+docs/evidence/web_application/
+
+# raw dataset (large; download from Kaggle) and local output
+data/
+stream_out/
+stream_state.json
+dist/
+
+# old experiments, not part of the pipeline
+ingest_api.py
+requirements.txt
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+.vercel
+docs/evidence/*wrong_evidence*
