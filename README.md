@@ -2,7 +2,7 @@
 
 An end-to-end **batch data engineering pipeline on AWS** for the Brazilian e-commerce marketplace
 **Olist**. Raw order data and a daily API feed land in an S3 data lake, are cleaned and modelled
-into a **star schema** with AWS Glue (PySpark), loaded into **Amazon Redshift Serverless**, and
+into a **galaxy schema** (3 fact tables sharing dimensions) with AWS Glue (PySpark), loaded into **Amazon Redshift Serverless**, and
 analysed in **Amazon QuickSight**. The whole flow runs **automatically every night**, is
 **re-run safe**, and alerts by email when something fails.
 
@@ -10,7 +10,7 @@ analysed in **Amazon QuickSight**. The whole flow runs **automatically every nig
 |---|---|
 | **Data** | [Olist Brazilian E-Commerce dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce): 9 CSV files, ~100k orders, Sep 2016 – Oct 2018 + a simulated daily API feed |
 | **Cloud** | AWS `us-east-1`: S3, Glue, Athena, Lambda, Step Functions, EventBridge, Redshift Serverless, QuickSight, SNS, CloudWatch, Secrets Manager, IAM |
-| **Warehouse model** | Star schema: 6 dimensions + 3 fact tables, surrogate keys, "Unknown" members |
+| **Warehouse model** | Galaxy schema (fact constellation): 3 fact tables sharing 6 dimensions, surrogate keys, "Unknown" members |
 | **Schedule** | Daily at 02:00 IST, orchestrated by Step Functions |
 
 ---
@@ -41,7 +41,7 @@ flowchart LR
     subgraph "S3 data lake (olistcap-data-2026)"
         R[(raw/<br/>CSV + JSON Lines)]
         C[(curated/<br/>clean Parquet)]
-        T[(trusted/<br/>star schema Parquet)]
+        T[(trusted/<br/>dimensional model Parquet)]
     end
     K -->|aws s3 cp| R
     A -->|Lambda olist_api_ingest<br/>bookmark = no duplicates| R
@@ -89,7 +89,7 @@ same key), and moves the bookmark forward after every day. A failed run resumes 
 |---|---|---|---|
 | `raw/` | data exactly as received, never changed | upload / Lambda | CSV, JSON Lines |
 | `curated/` | one clean table per entity, all sources combined, de-duplicated, real data types | Glue job 1 | Parquet (`orders` partitioned by `purchase_year`, `purchase_month`) |
-| `trusted/` | the star schema, ready to load | Glue job 2 | Parquet, one file per table |
+| `trusted/` | the dimensional model (facts + dimensions), ready to load | Glue job 2 | Parquet, one file per table |
 | `state/` | ingestion bookmark | Lambda | JSON |
 
 Glue Data Catalog databases: `olist_raw_db`, `olist_curated_db`, `olist_trusted_db`, so every
@@ -121,21 +121,53 @@ have exactly one row per curated order, so a bad join can never silently add or 
 
 ---
 
-## 6. Star schema (Redshift `olist` schema)
+## 6. Data model: galaxy schema (Redshift `olist` schema)
+
+### Which schema type is this?
+A **star schema** is **one** fact table in the middle with its dimensions around it. This model
+has **3 fact tables** that **share the same dimensions**, so it is a **galaxy schema** (also called
+a **fact constellation**):
+
+| Term | Meaning | In this project |
+|---|---|---|
+| **Star schema** | 1 fact table + its dimensions | each fact on its own *is* a star (for example `fact_sales` + customer, seller, product, date) |
+| **Galaxy schema / fact constellation** | several facts that **share conformed dimensions** | `fact_sales`, `fact_orders`, `fact_payments` all use the same `dim_customer` and `dim_date` |
+| **Snowflaking** | a dimension that points to another dimension | `dim_customer` and `dim_seller` → `dim_geography` (one small snowflaked branch) |
+
+So the precise name is a **galaxy schema with one snowflaked dimension (geography)**.
+
+**Are the fact tables connected to each other?** Not with foreign keys. Facts never reference
+other facts. All three carry **`order_id`** as a **degenerate dimension** (an id with no
+dimension table of its own), so they *can* be joined on `order_id` when needed (for example,
+payments vs items of the same order). Normally they are compared **through the shared
+dimensions** (customer, date) instead, which is called **drill-across**.
 
 ```mermaid
 erDiagram
     fact_sales }o--|| dim_customer : customer_key
     fact_sales }o--|| dim_seller : seller_key
     fact_sales }o--|| dim_product : product_key
-    fact_sales }o--|| dim_date : purchase_date_key
+    fact_sales }o--|| dim_date : "purchase / delivered / estimated date"
     fact_orders }o--|| dim_customer : customer_key
-    fact_orders }o--|| dim_date : purchase_date_key
-    fact_payments }o--|| dim_payment_type : payment_type_key
+    fact_orders }o--|| dim_date : "purchase / delivered / estimated date"
     fact_payments }o--|| dim_customer : customer_key
-    dim_customer }o--|| dim_geography : geography_key
-    dim_seller }o--|| dim_geography : geography_key
+    fact_payments }o--|| dim_payment_type : payment_type_key
+    fact_payments }o--|| dim_date : purchase_date_key
+    dim_customer }o--|| dim_geography : "geography_key (snowflake)"
+    dim_seller }o--|| dim_geography : "geography_key (snowflake)"
 ```
+
+| Shared (conformed) dimension | fact_sales | fact_orders | fact_payments |
+|---|:---:|:---:|:---:|
+| dim_customer (→ dim_geography) | ✅ | ✅ | ✅ |
+| dim_date | ✅ (3 roles) | ✅ (3 roles) | ✅ |
+| dim_seller (→ dim_geography) | ✅ | | |
+| dim_product | ✅ | | |
+| dim_payment_type | | | ✅ |
+| `order_id` (degenerate) | ✅ | ✅ | ✅ |
+
+`dim_date` is a **role-playing dimension**: the same table is used as the purchase, delivered
+and estimated delivery date.
 
 | Table | Grain (one row = …) | Main columns |
 |---|---|---|
@@ -150,8 +182,13 @@ erDiagram
 | dim_date | calendar day from 2016 (extends automatically with the API feed) | year, quarter, month, day name, is_weekend |
 
 **Design decisions**
-- **Three facts, three grains.** Item-level revenue, order-level delivery KPIs and
-  payment-level methods cannot share one grain without double counting, so each gets its own fact.
+- **Galaxy, not one big star: three facts, three grains.** Item-level revenue, order-level
+  delivery KPIs and payment-level methods cannot share one grain without double counting
+  (an order with 3 items and 2 payments would repeat values), so each gets its own fact.
+- **Conformed dimensions:** customer and date are built once and shared by all facts, so
+  "revenue by state" and "late % by state" always use the same definitions.
+- **Geography is snowflaked** (customer and seller both point to `dim_geography`) because
+  state and region come from a separate API reference table and are shared by two dimensions.
 - **Surrogate keys** (`row_number`) on every dimension; `dim_date` and `dim_geography` have a
   `-1` **Unknown** row, so orders with a missing date or state still join and are counted.
 - **`is_late` and `delivery_days` are computed in the fact**, once, instead of in every dashboard.
@@ -265,9 +302,9 @@ Dashboards: [`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboar
 │   └── load_redshift.py              # olist_load_redshift: TRUNCATE + COPY, refresh MV
 ├── glue_scripts/
 │   ├── olist-raw-to-curated.py       # Glue job 1: combine, clean, de-duplicate -> curated/
-│   └── olist_curated_to_trusted.py   # Glue job 2: star schema -> trusted/
+│   └── olist_curated_to_trusted.py   # Glue job 2: facts + dimensions -> trusted/
 ├── redshift/
-│   ├── table_creation.sql            # star schema DDL
+│   ├── table_creation.sql            # fact and dimension DDL
 │   ├── data_copy.sql                 # COPY commands
 │   └── queries.sql                   # business analysis queries
 ├── data_clean/col_issue.sql          # Athena fix for the crawler header problem
