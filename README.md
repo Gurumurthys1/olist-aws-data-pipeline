@@ -433,8 +433,11 @@ The raw dataset is not stored here (it is large). Download it from
       <sub>Data pipeline design · AWS Glue ETL · Redshift data model · automation</sub>
     </td>
     <td align="center" width="220">
-      <b>Kannan S</b><br>
-      <sub>Data analysis · QuickSight dashboards · testing and documentation</sub>
+      <a href="https://github.com/Kannan-S-coder">
+        <img src="https://github.com/Kannan-S-coder.png" width="90" alt="Kannan S"><br>
+        <b>Kannan S</b>
+      </a><br>
+      <sub>AWS Glue ETL ·Redshift data model.  QuickSight dashboards · Documentation</sub>
     </td>
   </tr>
 </table>
