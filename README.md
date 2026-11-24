@@ -206,7 +206,82 @@ DDL: [`redshift/table_creation.sql`](redshift/table_creation.sql) · analysis SQ
 
 ---
 
-## 7. Business insights
+## 7. Proof of work (screenshots from the AWS account)
+
+Every stage of the pipeline was built and run in a real AWS account (`us-east-1`).
+Click an image to open it full size.
+
+### 7.1 S3 data lake: one bucket, separate layers
+The bucket `olistcap-data-2026` holds the `raw/`, `curated/` and `trusted/` layers, plus `state/`
+(ingestion bookmark), `scripts/`, `temp/` and `athena-results/`.
+
+<img src="docs/evidence/s3_folders.png" alt="S3 bucket with raw, curated, trusted, state folders">
+
+<table>
+<tr>
+<td align="center"><b>raw/</b>: data as received<br><img src="docs/evidence/s3_raw_folder.png" alt="S3 raw layer" width="280"></td>
+<td align="center"><b>curated/</b>: cleaned Parquet<br><img src="docs/evidence/s3_curated_folder.png" alt="S3 curated layer" width="280"></td>
+<td align="center"><b>trusted/</b>: facts and dimensions<br><img src="docs/evidence/s3_trusted_folder.png" alt="S3 trusted layer" width="280"></td>
+</tr>
+</table>
+
+### 7.2 AWS Glue: ETL jobs and Data Catalog
+The two Glue ETL jobs (script mode): `olist-raw-to-curated` (job 1, cleaning) and
+`olist_curated_to_trusted` (job 2, dimensional model).
+
+<img src="docs/evidence/Glue_scripts.png" alt="Glue Studio with the two ETL jobs">
+
+The trusted layer registered in the Glue Data Catalog (`olist_trusted_db`): 6 dimension and
+3 fact tables in Parquet, queryable with Athena.
+
+<img src="docs/evidence/glue_database_table.png" alt="Glue Data Catalog trusted tables">
+
+### 7.3 Step Functions: the automated pipeline run
+A successful run of `olistcap_pipeline`: IngestApi → RawToCurated → CuratedToTrusted →
+LoadRedshift → Done, each step with a Catch to the SNS failure alert.
+
+<img src="docs/evidence/step_function_pipeline.png" alt="Successful Step Functions execution">
+
+### 7.4 Redshift Serverless: the loaded warehouse
+Row counts of all 9 tables in the `olist` schema after a load (for example, fact_sales
+119,656 item rows, fact_orders 105,594 orders).
+
+<img src="docs/evidence/redshift_count.png" alt="Row counts of the 9 Redshift tables">
+
+Sample rows of every table (Redshift Query Editor v2). In `fact_orders`, an order that was
+never delivered has `delivered_date_key = -1`, the **Unknown** date member, so it is still counted.
+
+<table>
+<tr>
+<td align="center"><b>dim_customer</b><br><img src="docs/evidence/redshift_tables/redshift_dim_customers.png" alt="dim_customer in Redshift" width="280"></td>
+<td align="center"><b>dim_seller</b><br><img src="docs/evidence/redshift_tables/redshift_dim_seller.png" alt="dim_seller in Redshift" width="280"></td>
+<td align="center"><b>dim_product</b><br><img src="docs/evidence/redshift_tables/redshift_dim_product.png" alt="dim_product in Redshift" width="280"></td>
+</tr>
+<tr>
+<td align="center"><b>dim_geography</b><br><img src="docs/evidence/redshift_tables/redshift_dim_geography.png" alt="dim_geography in Redshift" width="280"></td>
+<td align="center"><b>dim_payment_type</b><br><img src="docs/evidence/redshift_tables/redshift_dim_payment_type.png" alt="dim_payment_type in Redshift" width="280"></td>
+<td align="center"><b>dim_date</b><br><img src="docs/evidence/redshift_tables/redshift_dim_date.png" alt="dim_date in Redshift" width="280"></td>
+</tr>
+<tr>
+<td align="center"><b>fact_sales</b><br><img src="docs/evidence/redshift_tables/redshift_fact_sales.png" alt="fact_sales in Redshift" width="280"></td>
+<td align="center"><b>fact_orders</b><br><img src="docs/evidence/redshift_tables/redshift_fact_orders.png" alt="fact_orders in Redshift" width="280"></td>
+<td align="center"><b>fact_payments</b><br><img src="docs/evidence/redshift_tables/redshift_fact_payments.png" alt="fact_payments in Redshift" width="280"></td>
+</tr>
+</table>
+
+### 7.5 Data model diagram
+An interactive diagram of the trusted model with its surrogate keys:
+[`docs/evidence/olist_trusted_erd_surrogate_keys.html`](docs/evidence/olist_trusted_erd_surrogate_keys.html)
+(download and open it in a browser).
+
+### 7.6 QuickSight dashboards
+[`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboard.pdf) (sales trends,
+categories, payments) and [`analysic/Olist_map_dashboard.pdf`](analysic/Olist_map_dashboard.pdf)
+(orders and late deliveries by state).
+
+---
+
+## 8. Business insights
 
 Computed from the Olist history (Sep 2016 – Oct 2018: 99,441 orders, 112,650 items,
 96,096 unique customers, 3,095 sellers, 32,951 products). Values in Brazilian Real (R$).
@@ -264,7 +339,7 @@ Dashboards: [`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboar
 
 ---
 
-## 8. Security
+## 9. Security
 
 - **A separate IAM role per component** (Glue, each Lambda, Redshift COPY, QuickSight VPC),
   each scoped to the bucket paths, secrets and services it needs.
@@ -274,7 +349,7 @@ Dashboards: [`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboar
 - **Passwords live in AWS Secrets Manager**, never in code or in this repository.
 - The S3 bucket is not public; S3 encrypts objects at rest by default (SSE-S3).
 
-## 9. Monitoring and operations
+## 10. Monitoring and operations
 
 - Every pipeline step has a **Catch** → **SNS email** (`olist-alerts`) with the error.
 - **CloudWatch alarm** `olist-pipeline-failed` on the state machine's `ExecutionsFailed` metric.
@@ -283,7 +358,7 @@ Dashboards: [`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboar
 - Re-running the pipeline is always safe: bookmark + overwrite in ingestion, `keep_latest` in
   Glue, full rebuild of curated/trusted, `TRUNCATE` + `COPY` in Redshift.
 
-## 10. Cost notes
+## 11. Cost notes
 
 - Redshift **Serverless** (pay per use, scales to zero) instead of an always-on cluster.
 - Parquet + partitioning keep Glue, Athena and Redshift scans small.
@@ -292,7 +367,7 @@ Dashboards: [`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboar
 
 ---
 
-## 11. Repository structure
+## 12. Repository structure
 
 ```
 ├── aws_copy.sh                       # upload the 9 CSVs to raw/ + create Glue databases
@@ -315,7 +390,7 @@ Dashboards: [`analysic/Olist_Sales_Dashboard.pdf`](analysic/Olist_Sales_Dashboar
 The raw dataset is not stored here (it is large). Download it from
 [Kaggle](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) into `data/`.
 
-## 12. How to run it
+## 13. How to run it
 
 1. Create the S3 bucket and run [`aws_copy.sh`](aws_copy.sh) (upload CSVs, create Glue databases).
 2. Create the Glue jobs from [`glue_scripts/`](glue_scripts/) (Glue 4.0/5.0, role with S3 access).
@@ -326,7 +401,7 @@ The raw dataset is not stored here (it is large). Download it from
    [`aws_pipeline_step_function.json`](aws_pipeline_step_function.json) and an EventBridge schedule for it.
 6. Connect QuickSight to Redshift (VPC connection, read-only user) and build the dashboards.
 
-## 13. Challenges and lessons learned
+## 14. Challenges and lessons learned
 
 - **Glue crawler header problem:** all-text CSVs were read as `col0…` with the header as data;
   fixed with explicit Athena DDL and `OpenCSVSerde`.
@@ -337,7 +412,7 @@ The raw dataset is not stored here (it is large). Download it from
 - **Missing dimension members:** left joins plus an Unknown `-1` row (date, geography) keep
   every order in the facts instead of silently dropping rows.
 
-## 14. Future improvements
+## 15. Future improvements
 
 - Incremental (merge) loads into Redshift instead of a full reload, once data grows.
 - **AWS Glue Data Quality** rulesets with a pass/fail score per run.
