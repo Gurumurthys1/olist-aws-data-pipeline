@@ -418,3 +418,23 @@ The raw dataset is not stored here (it is large). Download it from
 - **AWS Glue Data Quality** rulesets with a pass/fail score per run.
 - SCD Type 2 on customers and sellers to keep address history.
 - Natural-language questions on the warehouse with **Amazon Bedrock** (text-to-SQL).
+
+---
+
+## 16. Contributors
+
+<table>
+  <tr>
+    <td align="center" width="220">
+      <a href="https://github.com/Gurumurthys1">
+        <img src="https://github.com/Gurumurthys1.png" width="90" alt="Gurumurthy S"><br>
+        <b>Gurumurthy S</b>
+      </a><br>
+      <sub>Data pipeline design · AWS Glue ETL · Redshift data model · automation</sub>
+    </td>
+    <td align="center" width="220">
+      <b>Kannan S</b><br>
+      <sub>Data analysis · QuickSight dashboards · testing and documentation</sub>
+    </td>
+  </tr>
+</table>

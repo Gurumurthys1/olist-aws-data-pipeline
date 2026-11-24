@@ -19,6 +19,7 @@ dist/
 # old experiments, not part of the pipeline
 ingest_api.py
 requirements.txt
+README.md
 
 # python
 .venv/
